@@ -99,3 +99,7 @@ The [HTML API guide](https://karoly-pfaff.github.io/audio-analyzer/) contains co
 explanations, TypeScript examples and the searchable reference.
 
 MIT licensed. See [LICENSE](LICENSE).
+
+## Support
+
+Support this project through [GitHub Sponsors](https://github.com/sponsors/karoly-pfaff).
