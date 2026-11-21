@@ -1,0 +1,290 @@
+<section id="music">
+  <p class="eyebrow">MUSICAL ANALYSIS</p>
+  <h2>Musical feature timelines</h2>
+  <p>
+    <code>analyzeAudio(input, settings?, progress?)</code> returns an AudioFeatureTimeline
+    containing frame features, onsets, observed beats, sections and waveform peaks. Supply a mono
+    analysis copy at exactly 22,050 Hz.
+  </p>
+  <!-- RECIPE:musical -->
+  <p>
+    <code>createAnalysisPcm(samples)</code> validates and copies a nonempty finite Float32Array. If
+    the sample peak exceeds one, it attenuates the copy to a peak of one; otherwise the gain is one.
+    The returned <code>inputPeak</code> and <code>normalizationGain</code> describe that
+    preparation. The function does not change the sample rate: passing 48 kHz samples does not
+    resample them.
+  </p>
+  <p>
+    <code>sourceSha256</code> and <code>provenance.pcmSha256</code> must be lowercase, 64-character
+    SHA-256 hex strings. The former identifies the source recording; the latter identifies the
+    prepared PCM under your application's documented byte/channel policy.
+    <code>decoderVersion</code> is a nonempty string of at most 1,000 characters describing the
+    decoder and preparation used. Keep these values when saving a timeline.
+  </p>
+  <div class="table-scroll">
+    <table>
+      <caption>
+        Input and source-clock contract
+      </caption>
+      <thead>
+        <tr>
+          <th>Property</th>
+          <th>Contract</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>PCM</td>
+          <td>Nonempty finite Float32Array; at most 39,690,000 samples (30 minutes).</td>
+        </tr>
+        <tr>
+          <td>Frame / hop</td>
+          <td>
+            1,024 / 256 samples. <code>FEATURE_HZ = 22050 / 256</code>, approximately 86.133 Hz.
+          </td>
+        </tr>
+        <tr>
+          <td>Frame count</td>
+          <td>
+            <code>Math.ceil(sampleCount / HOP_SIZE)</code>. Source time is frame index divided by
+            featureHz.
+          </td>
+        </tr>
+        <tr>
+          <td>Identity</td>
+          <td>
+            Timeline schema 1; musical algorithm <code>audio-rules-1.3.0-meyda-5.6.3</code>. Package
+            version is a separate identity.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <h3>Frame values and units</h3>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Interpretation</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>raw.rms</td>
+          <td>Frame RMS amplitude of the prepared musical copy.</td>
+        </tr>
+        <tr>
+          <td>raw.sub / bass / mid / high</td>
+          <td>
+            Band power for 20–60, 60–250, 250–2,000 and 2,000–11,025 Hz respectively. Boundaries
+            follow FFT-bin selection; values are not amplitudes or dB.
+          </td>
+        </tr>
+        <tr>
+          <td>raw.centroidHz</td>
+          <td>Frame spectral centroid in Hz.</td>
+        </tr>
+        <tr>
+          <td>raw.flatness</td>
+          <td>A unitless [0, 1] descriptor of spectral flatness.</td>
+        </tr>
+        <tr>
+          <td>raw.flux</td>
+          <td>
+            Positive change in spectral magnitude; used for onset detection, not expressed in Hz or
+            dB.
+          </td>
+        </tr>
+        <tr>
+          <td>
+            channels.energy / sub / bass / mid / high / brightness / roughness / onsetStrength
+          </td>
+          <td>
+            Normalized [0, 1] control values. Normalization depends on the recording, so equal
+            values in different tracks do not imply equal absolute levels.
+          </td>
+        </tr>
+        <tr>
+          <td>channels.sectionEnergy</td>
+          <td>The containing section's normalized energy, repeated at the feature-frame rate.</td>
+        </tr>
+        <tr>
+          <td>channels.beatPhase</td>
+          <td>
+            Null when no rhythm is accepted; otherwise an array of [0, 1] phase values and null gaps
+            between unsupported beat intervals.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <h3>Read a value at a source time</h3>
+  <p>
+    Feature frame i corresponds to <code>i / timeline.featureHz</code> source seconds. Use the
+    source clock when seeking. The valid interval is [0, durationSeconds); the exact endpoint is
+    outside the timeline.
+  </p>
+  <pre
+    data-ts-example="read-timeline"
+  ><code>import type { AudioFeatureTimeline } from '@karoly-pfaff/audio-analyzer';
+
+export function readTimelineAt(timeline: AudioFeatureTimeline, seconds: number):
+  { energy: number; beatPhase: number | null } | null {
+  if (!Number.isFinite(seconds) || seconds &lt; 0 || seconds >= timeline.durationSeconds) return null;
+  const index = Math.floor(seconds * timeline.featureHz);
+  const energy = timeline.channels.energy[index];
+  if (energy === undefined) return null;
+  return { energy, beatPhase: timeline.channels.beatPhase?.[index] ?? null };
+}</code></pre>
+  <h3>Events, rhythm and sections</h3>
+  <p>
+    <code>onsets</code> contain id, time, strength and confidence; <code>beats</code> contain id,
+    time and confidence. Times are source seconds. Event IDs belong to the source timeline and
+    should be preserved when storing or presenting the result.
+  </p>
+  <p>
+    <code>rhythm.bpm</code> is null when rhythm is not accepted. Confidence and candidate scores are
+    [0, 1] descriptors, not probabilities. <code>ambiguous</code> marks uncertainty between tempo
+    interpretations. Each candidate supplies bpm, score, coverage, continuity and timing. The
+    timeline can contain observed local beat intervals that do not match one fixed global BPM; use
+    beat times for playback timing.
+  </p>
+  <p>
+    Sections cover the full source using contiguous [start, end) ranges. Their labels are sequential
+    section names, not inferred verse/chorus labels. Energy, novelty and confidence are [0, 1];
+    optional tags are low-energy or high-energy. Changes have source time, confidence and kind
+    build, drop, calm or shift. Novelty points include frame, source time, novelty and signed
+    energy/trend deltas in [-1, 1].
+  </p>
+  <p>
+    <code>waveform.minimum</code> and <code>waveform.maximum</code> describe blocks of
+    <code>waveform.samplesPerPeak</code> samples (1,024). Block i starts at
+    <code>i * samplesPerPeak / sampleRate</code> seconds. The last block can be shorter. These peaks
+    describe the prepared analysis copy; use /signal to measure original levels.
+  </p>
+  <h3>Settings and progress</h3>
+  <div class="table-scroll">
+    <table>
+      <caption>
+        Musical settings defaults and accepted bounds
+      </caption>
+      <thead>
+        <tr>
+          <th>Setting</th>
+          <th>Default</th>
+          <th>Bounds</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>onsets.minimumGapSeconds</td>
+          <td>0.08</td>
+          <td>0.04–0.5 seconds</td>
+        </tr>
+        <tr>
+          <td>onsets.thresholdMultiplier</td>
+          <td>1.5</td>
+          <td>0.5–10</td>
+        </tr>
+        <tr>
+          <td>onsets.madMultiplier</td>
+          <td>2</td>
+          <td>0–10</td>
+        </tr>
+        <tr>
+          <td>rhythm.minimumBpm / maximumBpm</td>
+          <td>50 / 220</td>
+          <td>40–240 BPM each; maximum must be at least minimum</td>
+        </tr>
+        <tr>
+          <td>rhythm.minimumConfidence</td>
+          <td>0.65</td>
+          <td>0.5–1</td>
+        </tr>
+        <tr>
+          <td>sections.minimumRegionSeconds</td>
+          <td>8</td>
+          <td>8–60 seconds</td>
+        </tr>
+        <tr>
+          <td>sections.contextSeconds</td>
+          <td>2</td>
+          <td>1–8 seconds</td>
+        </tr>
+        <tr>
+          <td>sections.noveltyThreshold</td>
+          <td>0.15</td>
+          <td>0.05–1</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Increase thresholdMultiplier or madMultiplier to require stronger onset evidence;
+    minimumGapSeconds limits how closely accepted onsets may occur. Rhythm minimumConfidence
+    controls acceptance, while the BPM bounds restrict candidate tempos. Section context and novelty
+    thresholds affect where structural changes are detected. Reanalyze explicitly after changing
+    settings.
+  </p>
+  <pre
+    data-ts-example="music-settings"
+  ><code>import { analyzeAudio, DEFAULT_ANALYSIS_SETTINGS } from '@karoly-pfaff/audio-analyzer';
+import type { AnalysisInput, AnalysisProgress, AudioFeatureTimeline } from '@karoly-pfaff/audio-analyzer';
+
+export function analyzeWithSettings(input: AnalysisInput, reportStage: (stage: AnalysisProgress) => void): AudioFeatureTimeline {
+  const settings = {
+    ...DEFAULT_ANALYSIS_SETTINGS,
+    onsets: { ...DEFAULT_ANALYSIS_SETTINGS.onsets, thresholdMultiplier: 1.7 },
+  };
+  return analyzeAudio(input, settings, reportStage);
+}</code></pre>
+  <p>
+    Progress callbacks occur synchronously in this order: features, onsets, rhythm, sections,
+    validating. They report stages, not percentages or a cancellation mechanism. A callback
+    exception propagates to the caller.
+  </p>
+  <h3>Using individual analysis functions</h3>
+  <p>Use the same prepared PCM and source identity throughout a staged analysis:</p>
+  <pre data-ts-example="music-stages"><code>import {
+  extractFrameFeatures, detectOnsets, trackRhythm, analyzeSections,
+  smoothFrameChannels, createOnsetEnvelope, createBeatPhase,
+} from '@karoly-pfaff/audio-analyzer';
+import type { AnalysisInput, FrameFeatures, OnsetEvent, RhythmResult, SectionAnalysis } from '@karoly-pfaff/audio-analyzer';
+
+export function analyzeStages(input: AnalysisInput): {
+  frames: FrameFeatures; onsets: readonly OnsetEvent[]; rhythm: RhythmResult;
+  structure: SectionAnalysis; channels: FrameFeatures['channels'];
+  onsetEnvelope: number[]; beatPhase: readonly (number | null)[] | null;
+} {
+  const frames = extractFrameFeatures(input.pcm, input.sourceSha256);
+  const onsets = detectOnsets(frames);
+  const rhythm = trackRhythm(frames, onsets);
+  return {
+    frames, onsets, rhythm, structure: analyzeSections(frames),
+    channels: smoothFrameChannels(frames, onsets),
+    onsetEnvelope: createOnsetEnvelope(frames, onsets),
+    beatPhase: createBeatPhase(frames, rhythm),
+  };
+}</code></pre>
+  <p>
+    Stage outputs are separate observations; use analyzeAudio when you need a complete validated
+    AudioFeatureTimeline. Keep onset IDs and frame clocks from the same source.
+    <code>hasObservedBeatInterval(beats, index)</code> checks whether a beat pair has nearby
+    interval support; a numeric BPM alone does not establish such an interval.
+  </p>
+  <h3>Custom envelope smoothing</h3>
+  <pre
+    data-ts-example="smooth-energy"
+  ><code>import { smoothEnvelope } from '@karoly-pfaff/audio-analyzer';
+
+export function smoothEnergy(values: readonly number[], featureHz: number): number[] {
+  return smoothEnvelope(values, { featureHz, attackMs: 20, releaseMs: 200 });
+}</code></pre>
+  <p>
+    Values must be finite and in [0, 1]. featureHz must be positive and at most 1,000; attackMs and
+    releaseMs accept 0–10,000. Zero milliseconds follows the target immediately for that direction.
+    The output has the input length; empty input yields an empty array. This smooths values on the
+    supplied source clock and does not create beat events.
+  </p>
+</section>

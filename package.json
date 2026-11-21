@@ -1,0 +1,101 @@
+{
+  "name": "@karoly-pfaff/audio-analyzer",
+  "version": "0.1.0",
+  "description": "Independent offline musical, original-signal, spectrum and quick-tempo PCM analysis.",
+  "license": "MIT",
+  "author": "Károly Pfaff",
+  "type": "module",
+  "files": [
+    "build",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "import": "./build/index.js"
+    },
+    "./signal": {
+      "types": "./build/signal.d.ts",
+      "import": "./build/signal.js"
+    },
+    "./spectrum": {
+      "types": "./build/spectrum.d.ts",
+      "import": "./build/spectrum.js"
+    },
+    "./tempo": {
+      "types": "./build/tempo.d.ts",
+      "import": "./build/tempo.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./build/index.d.ts",
+  "scripts": {
+    "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit && tsc -p tests/integration/consumer/tsconfig.json && tsc -p docs/site/tsconfig.json",
+    "test": "vitest run --maxWorkers=1 --no-file-parallelism",
+    "test:coverage": "npm test -- --coverage",
+    "test:tooling": "node --test --test-concurrency=1 \"scripts/**/*.test.mjs\"",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "lint:code": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix --max-warnings 0",
+    "lint:duplicates": "jscpd --config jscpd.json --no-colors --no-tips",
+    "lint:dead-code": "knip --no-progress --treat-config-hints-as-errors --treat-tag-hints-as-errors",
+    "lint": "npm run lint:code && npm run lint:duplicates && npm run lint:dead-code",
+    "package:check": "npm run build && node scripts/release/pack-candidate.mjs && node scripts/release/check-consumer.mjs",
+    "check": "npm run package:check && npm run format:check && npm run lint && npm run typecheck && npm run test:tooling && npm run docs:check && npm run test:coverage",
+    "prepack": "npm run build",
+    "docs:build": "npm run build && tsc -p docs/site/tsconfig.json && node scripts/documentation/build-documentation.mjs",
+    "docs:check": "npm run docs:build && node scripts/documentation/check-documentation.mjs",
+    "release:check": "node scripts/release/check-release.mjs",
+    "release:publish": "node scripts/release/publish-candidate.mjs",
+    "prepublishOnly": "node scripts/release/check-publish-context.mjs"
+  },
+  "dependencies": {
+    "meyda": "5.6.3",
+    "music-tempo": "1.0.3",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.2",
+    "@vitest/coverage-v8": "5.0.5",
+    "eslint": "10.13.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-sonarjs": "4.2.0",
+    "globals": "17.13.0",
+    "jscpd": "5.0.14",
+    "knip": "6.31.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.2",
+    "vitest": "5.0.5",
+    "vite": "8.3.4"
+  },
+  "engines": {
+    "node": ">=24.18.1 <25"
+  },
+  "packageManager": "npm@11.16.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/karoly-pfaff/audio-analyzer.git"
+  },
+  "homepage": "https://karoly-pfaff.github.io/audio-analyzer/",
+  "bugs": {
+    "url": "https://github.com/karoly-pfaff/audio-analyzer/issues"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "keywords": [
+    "audio",
+    "analysis",
+    "pcm",
+    "spectrum",
+    "bpm",
+    "typescript"
+  ]
+}

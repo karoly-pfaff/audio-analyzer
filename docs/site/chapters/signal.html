@@ -1,0 +1,239 @@
+<section id="signal">
+  <p class="eyebrow">SIGNAL</p>
+  <h2>Signal measurements and envelopes</h2>
+  <p>
+    <code>analyzeSignal(input, settings?)</code> measures original channel samples, including
+    amplitudes above one and opposite-phase stereo. Calls read the input synchronously without
+    normalizing, resampling or mutating it.
+  </p>
+  <!-- RECIPE:signal -->
+  <div class="table-scroll">
+    <table>
+      <caption>
+        Original PCM input
+      </caption>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Accepted values</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>channels</td>
+          <td>1–32 equally sized, nonempty Float32Array channels with finite samples.</td>
+        </tr>
+        <tr>
+          <td>sampleRate</td>
+          <td>Integer 1–768,000 Hz, describing the actual PCM clock.</td>
+        </tr>
+        <tr>
+          <td>Sample budget</td>
+          <td>
+            At most 100,000,000 values across all channels. Duration follows this sample-value
+            budget.
+          </td>
+        </tr>
+        <tr>
+          <td>Duration</td>
+          <td>
+            Frames per channel divided by sample rate; never total interleaved values divided by
+            sample rate.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    The raw input contains only <code>channels</code> and <code>sampleRate</code>.
+    <code>parseSignalPcm(input)</code> validates it and returns a SignalPcm with derived frameCount
+    and durationSeconds, borrowing the channel storage. To analyze again, pass the original
+    two-field payload: the parsed result has extra keys that strict input validation rejects.
+  </p>
+  <h3>Measurement fields</h3>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Meaning</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>peakAmplitude / peakDb</td>
+          <td>Largest absolute sample and its dB value relative to amplitude one.</td>
+        </tr>
+        <tr>
+          <td>rmsAmplitude / rmsDb</td>
+          <td>Root mean square over all channel sample values, and 20 log10(RMS).</td>
+        </tr>
+        <tr>
+          <td>dcOffset</td>
+          <td>Signed arithmetic mean over all channel sample values.</td>
+        </tr>
+        <tr>
+          <td>crestFactorDb</td>
+          <td>20 log10(peak/RMS). Zero-amplitude input has null crest factor.</td>
+        </tr>
+        <tr>
+          <td>clippedSampleCount / clippedSampleRatio</td>
+          <td>
+            Count and fraction of channel samples whose absolute amplitude is at least
+            clippingThreshold.
+          </td>
+        </tr>
+        <tr>
+          <td>silentSampleRatio</td>
+          <td>Fraction of channel samples whose absolute amplitude is below silenceThreshold.</td>
+        </tr>
+        <tr>
+          <td>channelMetrics</td>
+          <td>The same measurements for each input channel, in input channel order.</td>
+        </tr>
+        <tr>
+          <td>frameCount / channelCount / durationSeconds</td>
+          <td>Samples per channel, number of channels and frameCount/sampleRate.</td>
+        </tr>
+        <tr>
+          <td>settings / analyzerVersion / schemaVersion</td>
+          <td>The settings and result identities to retain when saving measurements.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Zero peak/RMS produces null dB values. Positive amplitudes below one produce negative dB;
+    amplitudes above one can produce positive dB. Pooled DC can cancel across channels, so inspect
+    channelMetrics when channel-specific offsets matter. Sample peak and clipping thresholds do not
+    measure inter-sample true peak or integrated loudness.
+  </p>
+  <h3>Clipping labels</h3>
+  <p>
+    <code>clippingRisk</code> is determined by clippedSampleRatio, using the same thresholds for
+    aggregate and per-channel measurements:
+  </p>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Label</th>
+          <th>Ratio r</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>none</td>
+          <td>r = 0</td>
+        </tr>
+        <tr>
+          <td>low</td>
+          <td>0 &lt; r &lt; 0.00001</td>
+        </tr>
+        <tr>
+          <td>medium</td>
+          <td>0.00001 ≤ r &lt; 0.0001</td>
+        </tr>
+        <tr>
+          <td>high</td>
+          <td>r ≥ 0.0001</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    These are threshold labels, not probabilities. A clipped sample count is not the number of
+    clipped time regions.
+  </p>
+  <h3>Settings and regions</h3>
+  <div class="table-scroll">
+    <table>
+      <caption>
+        Default signal settings; pass a complete settings object
+      </caption>
+      <thead>
+        <tr>
+          <th>Setting</th>
+          <th>Default</th>
+          <th>Range</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>clippingThreshold</td>
+          <td>0.999</td>
+          <td>(0, 1]</td>
+        </tr>
+        <tr>
+          <td>silenceThreshold</td>
+          <td>0.0001</td>
+          <td>(0, 1]</td>
+        </tr>
+        <tr>
+          <td>silenceWindowSeconds</td>
+          <td>0.05</td>
+          <td>(0, 10]</td>
+        </tr>
+        <tr>
+          <td>clippingWindowSeconds</td>
+          <td>0.01</td>
+          <td>(0, 10]</td>
+        </tr>
+        <tr>
+          <td>dynamicWindowSeconds</td>
+          <td>0.1</td>
+          <td>(0, 10]</td>
+        </tr>
+        <tr>
+          <td>minimumDynamicRms</td>
+          <td>0.000001</td>
+          <td>(0, 1]</td>
+        </tr>
+        <tr>
+          <td>maximumRegions</td>
+          <td>200</td>
+          <td>Integer 1–10,000</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Silence requires all samples in every channel of a window to remain below threshold. A clipping
+    window requires any channel sample to reach its threshold. Adjacent matching windows form a
+    region. Endpoints are [startSeconds, endSeconds) source seconds, including the last partial
+    window; they describe window boundaries rather than exact threshold-crossing sample times.
+  </p>
+  <p>
+    <code>silence</code> and <code>clipping</code> each contain regions, regionCount,
+    longestRegionSeconds and regionsTruncated. The count and longest duration describe the complete
+    input even when maximumRegions limits the stored list. Do not present a truncated list as the
+    complete set of regions.
+  </p>
+  <p>
+    <code>dynamicRangeProxyDb</code> compares maximum/minimum RMS above minimumDynamicRms in
+    complete dynamicWindowSeconds windows. It ignores the partial tail and needs enough input for
+    two complete windows. If no window qualifies, or a window rounds down to zero samples, the
+    result is null; one qualifying window produces zero dB. This proxy is not LUFS or standardized
+    loudness range.
+  </p>
+  <h3>Waveform and RMS envelopes</h3>
+  <!-- RECIPE:envelope -->
+  <p>
+    <code>createSignalEnvelope(input, columns?)</code> accepts 1–65,536 columns, default 1,024. Its
+    minimum, maximum, rms and transientActivity Float32Arrays all have exactly that length.
+    Minimum/maximum include zero and all channels, so opposite-phase stereo retains its extrema.
+    Original amplitudes above one remain above one.
+  </p>
+  <p>
+    Column i covers samples from <code>floor(i * frameCount / columns)</code> to
+    <code>ceil((i + 1) * frameCount / columns)</code>, bounded by the input. Rounded windows can
+    overlap; very short input can repeat samples across columns. The final sample is included. Map
+    samples to source seconds with sampleRate rather than treating a column as a new audio frame.
+  </p>
+  <p>
+    <code>transientActivity</code> is the positive difference between adjacent RMS buckets, scaled
+    by the largest positive difference. It ranges from zero to one. The first value is zero; if
+    there are no positive differences, all values are zero. It is a display descriptor and is not a
+    musical onset timestamp.
+  </p>
+</section>

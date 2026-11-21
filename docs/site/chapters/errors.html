@@ -1,0 +1,152 @@
+<section id="errors">
+  <p class="eyebrow">ERRORS</p>
+  <h2>Validation and error handling</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Operation</th>
+          <th>Failure</th>
+          <th>Interpretation</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>createAnalysisPcm / extractFrameFeatures</td>
+          <td>AudioAnalysisError: invalid-pcm</td>
+          <td>
+            Empty, nonfinite, invalid or oversized musical PCM. Use createAnalysisPcm to prepare
+            input rather than constructing AnalysisPcm by hand.
+          </td>
+        </tr>
+        <tr>
+          <td>Musical settings, provenance and result schemas</td>
+          <td>Zod validation error</td>
+          <td>
+            Missing/unknown fields, values outside bounds or inconsistent source clocks/events.
+          </td>
+        </tr>
+        <tr>
+          <td>Musical feature extraction / smoothEnvelope values</td>
+          <td>AudioAnalysisError: analysis-failed</td>
+          <td>
+            Feature extraction failed, or envelope values are nonfinite/outside [0, 1]. Invalid
+            EnvelopeSettings produce a schema validation error.
+          </td>
+        </tr>
+        <tr>
+          <td>Signal PCM, spectrum/tempo PCM and channel selection</td>
+          <td>SignalAnalysisError: invalid-pcm</td>
+          <td>
+            Wrong channel type/count, unequal lengths, nonfinite samples, invalid rate/sample budget
+            or a missing selected channel.
+          </td>
+        </tr>
+        <tr>
+          <td>Signal settings</td>
+          <td>SignalAnalysisError: invalid-settings</td>
+          <td>A complete settings object did not satisfy its allowed bounds.</td>
+        </tr>
+        <tr>
+          <td>createSignalEnvelope columns</td>
+          <td>SignalAnalysisError: invalid-resolution</td>
+          <td>Column count is not an integer from 1 through 65,536.</td>
+        </tr>
+        <tr>
+          <td>Spectrum settings / calculation</td>
+          <td>SpectrumAnalysisError: invalid-settings / numeric-overflow</td>
+          <td>Invalid settings, or input magnitudes that cannot produce finite spectrum output.</td>
+        </tr>
+        <tr>
+          <td>Tempo settings / numeric comparisons</td>
+          <td>TempoAnalysisError: invalid-settings / invalid-bpm</td>
+          <td>Invalid caller settings or a BPM value that is not a finite positive number.</td>
+        </tr>
+        <tr>
+          <td>Quick tempo estimation</td>
+          <td>unavailable / failed / cancelled result</td>
+          <td>
+            Handle the status union before reading bpm. This is separate from thrown
+            caller-validation errors.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <pre
+    data-ts-example="signal-errors"
+  ><code>import { analyzeSignal, SignalAnalysisError } from '@karoly-pfaff/audio-analyzer/signal';
+import type { SignalAnalysisSummary } from '@karoly-pfaff/audio-analyzer/signal';
+
+export function trySignal(input: unknown):
+  { status: 'complete'; summary: SignalAnalysisSummary } | { status: 'invalid'; code: SignalAnalysisError['code'] } {
+  try {
+    return { status: 'complete', summary: analyzeSignal(input) };
+  } catch (error) {
+    if (error instanceof SignalAnalysisError) return { status: 'invalid', code: error.code };
+    throw error;
+  }
+}</code></pre>
+  <h3>Validate settings without running analysis</h3>
+  <pre
+    data-ts-example="validate-settings"
+  ><code>import { signalSettingsSchema } from '@karoly-pfaff/audio-analyzer/signal';
+import type { SignalSettings } from '@karoly-pfaff/audio-analyzer/signal';
+
+export function readSignalSettings(input: unknown): SignalSettings | null {
+  const result = signalSettingsSchema.safeParse(input);
+  return result.success ? result.data : null;
+}</code></pre>
+  <p>
+    Every exported *Schema provides parse and safeParse. parse returns a validated value or throws;
+    safeParse returns a discriminated success/data or error result. Neither fills in omitted
+    settings fields. The direct signal/spectrum/tempo analysis calls translate invalid settings to
+    their documented error classes; calling the schema directly returns Zod validation information.
+  </p>
+  <h3>Common questions</h3>
+  <details>
+    <summary>Why do original levels and musical energy differ?</summary>
+    <p>
+      Original signal metrics retain amplitude. Musical input can be attenuated, and its control
+      channels are normalized per recording. Compare raw amplitude with original signal metrics, and
+      use normalized channels for relative musical variation.
+    </p>
+  </details>
+  <details>
+    <summary>Why can stereo cancel in spectrum or tempo analysis?</summary>
+    <p>
+      The 'mean' policy averages channels. Opposite-phase samples can cancel. Select an existing
+      channel index to analyze that channel independently.
+    </p>
+  </details>
+  <details>
+    <summary>Why are beats or beat phase absent?</summary>
+    <p>
+      Accepted musical rhythm requires observed events and supported intervals. A quick BPM estimate
+      does not supply those events. Keep null phases and unavailable results visible in your
+      application.
+    </p>
+  </details>
+  <details>
+    <summary>Does maximumFrames limit spectrum processing time?</summary>
+    <p>
+      It limits stored time columns. All source windows still contribute, so long input should run
+      in a worker.
+    </p>
+  </details>
+  <details>
+    <summary>Why did passing SignalPcm back into analyzeSignal fail?</summary>
+    <p>
+      parseSignalPcm returns derived frameCount and durationSeconds. Analysis input is a strict
+      two-field object: channels and sampleRate. Pass the original payload or construct that
+      two-field object.
+    </p>
+  </details>
+  <details>
+    <summary>Can a cancellation signal stop a running synchronous estimate?</summary>
+    <p>
+      It is checked before work and before delivery. A blocked thread cannot process an asynchronous
+      abort while the calculation runs; terminate the worker for active interruption.
+    </p>
+  </details>
+</section>

@@ -1,0 +1,16 @@
+{
+  "name": "audio-analyzer-packed-consumer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit && node smoke.mjs && vite build"
+  },
+  "dependencies": {
+    "@karoly-pfaff/audio-analyzer": "file:../../../artifacts/audio-analyzer.tgz"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3",
+    "vite": "8.3.4"
+  }
+}

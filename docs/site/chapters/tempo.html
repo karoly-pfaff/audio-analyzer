@@ -1,0 +1,178 @@
+<section id="tempo">
+  <p class="eyebrow">TEMPO</p>
+  <h2>Tempo estimation and comparison</h2>
+  <p>
+    <code>estimateQuickTempo(input, settings?, cancellation?)</code> estimates BPM from the
+    beginning of original PCM. Use the <a href="#signal">signal input contract</a>. The result is an
+    estimate for that prefix; it does not provide beat positions or a tempo map for the entire
+    recording.
+  </p>
+  <!-- RECIPE:tempo -->
+  <h3>Settings and analyzed duration</h3>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Setting</th>
+          <th>Default</th>
+          <th>Accepted values</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>channel</td>
+          <td>'mean'</td>
+          <td>'mean' or integer 0–31 selecting a channel present in the input</td>
+        </tr>
+        <tr>
+          <td>maximumSeconds</td>
+          <td>60</td>
+          <td>Positive, at most 60 seconds</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    The analyzed prefix is at most maximumSeconds and 3,000,000 mono sample values, with at least
+    one input frame selected. For example, at 96 kHz the sample limit caps analysis at 31.25 seconds
+    even with maximumSeconds = 60. Samples are not resampled.
+  </p>
+  <p>
+    For every non-cancelled result, read analyzedFrameCount, analyzedSeconds and truncated alongside
+    sourceFrameCount and sourceDurationSeconds. The result also includes sampleRate, hopSize,
+    timeStepSeconds, fftSize, settings, analyzerVersion and schemaVersion. Audio shorter than the
+    2,048-sample FFT returns unavailable with insufficient-audio; a zero-valued selected signal
+    returns silence.
+  </p>
+  <h3>Result states</h3>
+  <div class="table-scroll">
+    <table>
+      <caption>
+        Result states are a discriminated union
+      </caption>
+      <thead>
+        <tr>
+          <th>status</th>
+          <th>Read these fields</th>
+          <th>Interpretation</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>estimated</td>
+          <td>bpm, confidenceLabel, confidenceBasis and metadata</td>
+          <td>Display a provisional estimate; retain the heuristic basis.</td>
+        </tr>
+        <tr>
+          <td>unavailable</td>
+          <td>reason: insufficient-audio, silence or insufficient-rhythm</td>
+          <td>No BPM is available for this prefix.</td>
+        </tr>
+        <tr>
+          <td>failed</td>
+          <td>code: estimator-failed or invalid-estimate</td>
+          <td>Report a failure independently of unavailable rhythm.</td>
+        </tr>
+        <tr>
+          <td>cancelled</td>
+          <td>schemaVersion and analyzerVersion only</td>
+          <td>Discard the operation. Analysis metadata is not present.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <pre
+    data-ts-example="describe-tempo"
+  ><code>import type { QuickTempoResult } from '@karoly-pfaff/audio-analyzer/tempo';
+
+export function describeTempo(result: QuickTempoResult): string {
+  switch (result.status) {
+    case 'estimated': return `${result.bpm} BPM (${result.confidenceBasis})`;
+    case 'unavailable': return `No estimate: ${result.reason}`;
+    case 'failed': return `Analysis failed: ${result.code}`;
+    case 'cancelled': return 'Cancelled';
+  }
+}</code></pre>
+  <p>
+    Estimated BPM is rounded to one decimal. <code>confidenceBasis</code> is 'bpm-range-heuristic':
+    high for an unrounded estimate of 60–160 BPM, medium for 40–220 outside that range, and low
+    otherwise. A rounded BPM near a label boundary may appear to belong to the next range. These
+    labels are not probabilities or observed-beat confidence scores.
+  </p>
+  <p>
+    insufficient-rhythm means the selected prefix did not provide a usable rhythmic estimate. A
+    failed result uses estimator-failed when estimation could not complete, or invalid-estimate when
+    it produced a nonfinite or out-of-range BPM (outside 1–1,000 before rounding). An unavailable
+    result describes missing evidence; a failed result describes an unsuccessful calculation.
+  </p>
+  <h3>Cancellation</h3>
+  <p>
+    The third argument accepts <code>{ readonly aborted: boolean }</code>; an AbortSignal fits this
+    contract. A pre-aborted request returns cancelled before validating PCM or settings. A cancelled
+    result has only status, schemaVersion and analyzerVersion. The flag is checked again before
+    delivery, but cannot interrupt an already blocked synchronous calculation; terminate the
+    application's worker for active interruption.
+  </p>
+  <pre
+    data-ts-example="cancel-tempo"
+  ><code>import { estimateQuickTempo } from '@karoly-pfaff/audio-analyzer/tempo';
+
+const controller = new AbortController();
+controller.abort();
+export const result = estimateQuickTempo(undefined, undefined, controller.signal);
+// result.status === 'cancelled'; input validation is not reached.</code></pre>
+  <h3>Numeric BPM relationships</h3>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Function</th>
+          <th>Result</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>normalizeBpm(bpm)</td>
+          <td>
+            Octave-folds positive BPM around the 60/120 boundary. Exact 120 normalizes to 60, while
+            59.9 normalizes to 119.8.
+          </td>
+        </tr>
+        <tr>
+          <td>isHalfDoubleMatch(a, b)</td>
+          <td>
+            True when normalized tempos or their octave alternatives differ by at most 5 BPM. This
+            also accepts equal/nearby tempos.
+          </td>
+        </tr>
+        <tr>
+          <td>getBpmRelation(a, b)</td>
+          <td>
+            compatible for direct difference ≤ 2 BPM; close for ≤ 5; otherwise halfDouble for an
+            octave match, or mismatch.
+          </td>
+        </tr>
+        <tr>
+          <td>areBpmsCompatible(a, b)</td>
+          <td>True for compatible, close and halfDouble; false only for mismatch.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <pre
+    data-ts-example="tempo-relations"
+  ><code>import { normalizeBpm, getBpmRelation, isHalfDoubleMatch, areBpmsCompatible } from '@karoly-pfaff/audio-analyzer/tempo';
+
+export const comparisons = {
+  folded: normalizeBpm(174),                 // 87
+  nearby: getBpmRelation(120, 123),          // 'close'
+  octave: getBpmRelation(60, 119.9),         // 'halfDouble'
+  matches: isHalfDoubleMatch(60, 119.9),     // true
+  compatible: areBpmsCompatible(120, 123), // true
+};</code></pre>
+  <p>
+    These functions accept finite, positive numbers; strings, zero and nonfinite values throw
+    TempoAnalysisError with invalid-bpm. Comparison helpers do not inspect audio or create beat
+    positions.
+  </p>
+</section>

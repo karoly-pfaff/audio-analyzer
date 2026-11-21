@@ -1,0 +1,109 @@
+<section id="spectrum">
+  <p class="eyebrow">SPECTRUM</p>
+  <h2>Spectrum analysis</h2>
+  <p>
+    <code>analyzeSpectrum(input, settings?)</code> returns display frames and an independent
+    spectral centroid from original PCM. Use the <a href="#signal">signal input contract</a>. Select
+    'mean' for an arithmetic channel mean or an existing zero-based source channel index.
+    Opposite-phase channels can cancel in the mean.
+  </p>
+  <!-- RECIPE:spectrum -->
+  <div class="table-scroll">
+    <table>
+      <caption>
+        Defaults and limits
+      </caption>
+      <thead>
+        <tr>
+          <th>Setting / constant</th>
+          <th>Default</th>
+          <th>Meaning</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>channel</td>
+          <td>'mean'</td>
+          <td>'mean' or integer 0–31 that actually exists in input</td>
+        </tr>
+        <tr>
+          <td>bins</td>
+          <td>256</td>
+          <td>1–1,025 selected bins; 1,025 includes Nyquist</td>
+        </tr>
+        <tr>
+          <td>maximumFrames</td>
+          <td>256</td>
+          <td>1–1,024 stored reduced frames</td>
+        </tr>
+        <tr>
+          <td>dbFloor</td>
+          <td>-80</td>
+          <td>-160 through -1 dB, relative to selected-bin maximum</td>
+        </tr>
+        <tr>
+          <td>FFT / hop</td>
+          <td>2,048 / 1,024 samples</td>
+          <td>Symmetric Hann display window; zero padding outside source</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <h3>Read frequency and source time</h3>
+  <p>
+    <code>frames[frameIndex][binIndex]</code> is a relative display magnitude in [0, 1]. Bin k
+    corresponds to <code>k * binHz</code>, where binHz = sampleRate/fftSize. At 48 kHz, the default
+    256 bins cover 0–5,976.5625 Hz; selecting all 1,025 bins includes 24,000 Hz. Read
+    maximumFrequencyHz and nyquistHz before labeling an axis.
+  </p>
+  <pre
+    data-ts-example="read-spectrum"
+  ><code>import type { SpectrumResult } from '@karoly-pfaff/audio-analyzer/spectrum';
+
+export function readSpectrumCell(result: SpectrumResult, frameIndex: number, binIndex: number):
+  { frequencyHz: number; relativeMagnitude: number; firstCenterSeconds: number; lastCenterSeconds: number } | null {
+  const value = result.frames[frameIndex]?.[binIndex];
+  const range = result.frameRanges[frameIndex];
+  if (value === undefined || !range) return null;
+  return { frequencyHz: binIndex * result.binHz, relativeMagnitude: value, ...range };
+}</code></pre>
+  <p>
+    <code>numFrames</code> is the stored frame count; <code>analysisFrameCount</code> is the number
+    of source analysis windows. Every source window contributes to a maximum-per-bin reduction. The
+    frameRanges entry gives the first and last contributing window centers in source seconds, not
+    non-overlapping segment boundaries. Centers cover the input through its final sample; hopSize
+    describes the nominal analysis hop, so use the supplied ranges for display positioning.
+  </p>
+  <h3>Magnitude interpretation</h3>
+  <p>
+    Normalization uses one maximum across the selected bins and stored frames. One is the reference
+    maximum; zero is at or below dbFloor. A value v maps to relative dB with
+    <code>dbFloor * (1 - v)</code>, but a zero value does not distinguish silence from values below
+    the floor. These are not dBFS, calibrated power or loudness measurements.
+  </p>
+  <p>
+    Changing bins can change the normalization reference. A larger maximumFrames value stores more
+    time columns; lowering it limits output storage while all source windows still contribute. It
+    does not reduce the operation to a prefix.
+  </p>
+  <h3>Centroid and metadata</h3>
+  <p>
+    <code>centroidHz</code> uses the full one-sided spectrum regardless of the display bin count;
+    silence yields zero. It is a magnitude-weighted frequency descriptor, not the strongest bin or
+    an estimate of musical pitch. For a clean single tone, it is normally near the tone frequency.
+  </p>
+  <p>
+    Result metadata records sourceFrameCount, sourceChannelCount, sampleRate, durationSeconds,
+    settings, analyzerVersion and schemaVersion. Display processing is identified by window,
+    padding, reduction and magnitudeScale. The centroid's separate window, frequency coverage and
+    time policy are recorded as centroidWindow, centroidCoverage and centroidTimePolicy. Preserve
+    these fields when storing or comparing results.
+  </p>
+  <p>
+    Display FFT size is 2,048, with a nominal 1,024-sample hop. Display windows use symmetric Hann
+    weighting and zero padding outside the source; centroid metadata identifies its
+    endpoint-weighted window and tail policy. Maximum stored output is 1,024 × 1,025 float values.
+    Large recordings should be analyzed in a worker because output limits do not cap total analysis
+    work.
+  </p>
+</section>

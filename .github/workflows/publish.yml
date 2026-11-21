@@ -1,0 +1,66 @@
+name: GitHub Packages candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact package.json version
+        required: true
+        default: '0.1.0'
+        type: string
+      publish:
+        description: Publish the verified archive from the matching vVERSION tag
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-packages-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: github-packages
+    permissions:
+      contents: read
+      packages: write
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      PUBLISH_REQUESTED: ${{ inputs.publish }}
+      NODE_OPTIONS: --max-old-space-size=1536
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+          registry-url: https://npm.pkg.github.com
+          scope: '@karoly-pfaff'
+      - name: Use the recorded npm version
+        run: npm install --global npm@11.16.0 --ignore-scripts --no-audit --no-fund
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify candidate, consumer, quality, coverage and documentation
+        run: npm run check
+      - name: Verify release identity, version, context and archive digest
+        run: npm run release:check
+      - uses: actions/upload-artifact@v7
+        with:
+          name: audio-analyzer-release-candidate
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            artifacts/karoly-pfaff-audio-analyzer-*.tgz
+            artifacts/package-report.json
+            docs/site/build/index.html
+      - name: Publish the exact verified archive
+        if: ${{ inputs.publish }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run release:publish

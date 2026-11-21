@@ -1,0 +1,116 @@
+<section id="hosts">
+  <p class="eyebrow">INTEGRATION</p>
+  <h2>Preparing and retaining audio</h2>
+  <p>
+    Pass non-interleaved channel arrays with their actual sample rate. Signal measurements, spectrum
+    and quick tempo accept the original channels. Musical analysis requires a separate mono 22,050
+    Hz copy. Keep the original samples if they are also used for playback or original-level
+    measurements.
+  </p>
+  <h3>Copy PCM from a decoded browser buffer</h3>
+  <!-- RECIPE:browser-pcm -->
+  <p>
+    The returned object can be passed directly to analyzeSignal, analyzeSpectrum or
+    estimateQuickTempo. Copies are useful when transferring ownership to a worker; the analysis
+    functions themselves read the supplied arrays without requiring a copy.
+  </p>
+  <h3>Decode a selected file in a browser</h3>
+  <pre
+    data-ts-example="decode-file"
+    data-ts-prepend="browser-pcm"
+  ><code>export async function decodeFile(file: File): Promise&lt;ReturnType&lt;typeof copyDecodedPcm>> {
+  const context = new AudioContext();
+  try {
+    const decoded = await context.decodeAudioData(await file.arrayBuffer());
+    return copyDecodedPcm(decoded);
+  } finally {
+    await context.close();
+  }
+}</code></pre>
+  <p>
+    This uses the browser's decoder. The returned sampleRate is the decoded clock, which can differ
+    from the encoded file's rate. Keep it with the channel arrays rather than substituting a
+    presumed file rate.
+  </p>
+  <h3>Prepare the musical copy</h3>
+  <pre
+    data-ts-example="resample-mono"
+  ><code>export async function prepareMono22050(decoded: AudioBuffer): Promise&lt;Float32Array> {
+  const context = new OfflineAudioContext(1, Math.max(1, Math.ceil(decoded.duration * 22050)), 22050);
+  const source = context.createBufferSource();
+  source.buffer = decoded;
+  source.connect(context.destination);
+  source.start();
+  return (await context.startRendering()).getChannelData(0).slice();
+}</code></pre>
+  <p>
+    This example renders into a mono 22,050 Hz browser buffer using Web Audio's channel mixing. For
+    a required channel weighting or reproducible decoder policy, prepare PCM using that policy
+    instead. Record the actual preparation in decoderVersion and compute pcmSha256 from your defined
+    PCM byte representation before calling analyzeAudio.
+  </p>
+  <h3>Browser worker example</h3>
+  <p>
+    Save the following function in your worker entry. It validates unknown message content through
+    analyzeSignal and returns a typed reply:
+  </p>
+  <!-- RECIPE:worker -->
+  <p>Add this message listener to the same worker entry:</p>
+  <pre
+    data-ts-example="worker-entry"
+    data-ts-prepend="worker"
+  ><code>self.addEventListener('message', (event: MessageEvent&lt;unknown>) => {
+  self.postMessage(analyzeWorkerMessage(event.data));
+});</code></pre>
+  <p>In the calling application, send owned channel copies:</p>
+  <pre
+    data-ts-example="start-worker"
+    data-ts-prepend="browser-pcm"
+  ><code>export function startSignalWorker(decoded: AudioBuffer): Worker {
+  const input = copyDecodedPcm(decoded);
+  const worker = new Worker(new URL('./analysis-worker.ts', import.meta.url), { type: 'module' });
+  worker.postMessage(input, input.channels.map(channel => channel.buffer));
+  return worker;
+}</code></pre>
+  <p>
+    Attach message, error and messageerror listeners in the caller. A complete reply contains
+    summary; a failed reply contains code. For concurrent requests, add a request ID so the caller
+    can reject stale responses. Transferring detaches the copied arrays in the sender; retain the
+    original playback buffer. Call worker.terminate() to interrupt active analysis, then create
+    another worker for later work.
+  </p>
+  <h3>Save and restore results</h3>
+  <p>
+    Musical timelines use ordinary arrays and can be serialized as JSON. Validate restored content
+    before use:
+  </p>
+  <pre
+    data-ts-example="restore-timeline"
+  ><code>import { audioFeatureTimelineSchema } from '@karoly-pfaff/audio-analyzer';
+import type { AudioFeatureTimeline } from '@karoly-pfaff/audio-analyzer';
+
+export function restoreTimeline(serialized: string): AudioFeatureTimeline {
+  return audioFeatureTimelineSchema.parse(JSON.parse(serialized));
+}</code></pre>
+  <p>
+    Spectrum frames and signal envelopes contain Float32Arrays. Choose an explicit array or binary
+    representation; plain JSON.stringify does not preserve typed arrays. For example:
+  </p>
+  <pre
+    data-ts-example="serialize-spectrum"
+  ><code>import type { SpectrumResult } from '@karoly-pfaff/audio-analyzer/spectrum';
+
+export function serializeSpectrum(result: SpectrumResult): string {
+  return JSON.stringify({ ...result, frames: result.frames.map(frame => Array.from(frame)) });
+}</code></pre>
+  <p>
+    When restoring spectrum or envelope data, validate the stored metadata and array dimensions in
+    your application, then reconstruct Float32Arrays. There is no exported result schema for those
+    outputs. Worker structured cloning preserves typed arrays without JSON conversion.
+  </p>
+  <p>
+    For cached analysis, retain source/PCM identity, preparation version, analyzerVersion and
+    settings. Parsing a saved timeline validates its schema and relationships; it does not recompute
+    its observations or upgrade an older algorithm result.
+  </p>
+</section>

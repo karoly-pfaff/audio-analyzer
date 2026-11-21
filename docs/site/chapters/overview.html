@@ -1,0 +1,166 @@
+<section id="overview" class="hero">
+  <p class="eyebrow">DOCUMENTATION</p>
+  <h1>Audio Analyzer</h1>
+  <p class="lead">
+    Analyze decoded PCM audio to measure signal levels, inspect frequency content, estimate tempo or
+    obtain a musical feature timeline.
+  </p>
+  <div class="hero-links">
+    <a class="primary-link" href="#installation">Installation</a
+    ><a href="#reference">API reference</a>
+  </div>
+</section>
+<section aria-labelledby="choose-profile">
+  <h2 id="choose-profile">Choose an API</h2>
+  <div class="profile-grid">
+    <a class="profile-card" href="#music"
+      ><h3>Musical analysis</h3>
+      <p>Frame features, onsets, beats and sections from 22,050 Hz mono PCM.</p>
+      <code>@karoly-pfaff/audio-analyzer</code></a
+    >
+    <a class="profile-card" href="#signal"
+      ><h3>Signal measurements</h3>
+      <p>Original-channel peak, RMS, DC, clipping, silence and waveform envelopes.</p>
+      <code>/signal</code></a
+    >
+    <a class="profile-card" href="#spectrum"
+      ><h3>Spectrum analysis</h3>
+      <p>Display magnitudes, frequency/time coordinates and spectral centroid.</p>
+      <code>/spectrum</code></a
+    >
+    <a class="profile-card" href="#tempo"
+      ><h3>Tempo estimation</h3>
+      <p>A BPM estimate from an audio prefix, plus numeric tempo comparisons.</p>
+      <code>/tempo</code></a
+    >
+  </div>
+  <p>
+    Supply decoded samples; decoding and playback belong to your application. Calls are synchronous.
+    Use a worker for long recordings or whenever blocking the calling thread would interrupt your
+    application.
+  </p>
+  <div class="callout">
+    <strong>Keep the units distinct.</strong> Signal measurements retain original amplitude. Musical
+    feature channels are normalized to [0, 1]. Spectrum pixels are relative magnitudes. These values
+    cannot be used interchangeably.
+  </div>
+</section>
+<section id="installation">
+  <p class="eyebrow">GET STARTED</p>
+  <h2>Installation and imports</h2>
+  <p>Install the package archive in your application:</p>
+  <pre><code>npm install ./karoly-pfaff-audio-analyzer-0.1.0.tgz</code></pre>
+  <p>
+    The package uses ESM and includes TypeScript declarations. Supported Node.js versions are
+    24.18.1 through 24.x. For a browser application, import it through your ESM bundler.
+  </p>
+  <pre
+    data-ts-example="imports"
+  ><code>import { analyzeAudio, createAnalysisPcm } from '@karoly-pfaff/audio-analyzer';
+import { analyzeSignal } from '@karoly-pfaff/audio-analyzer/signal';
+import { analyzeSpectrum } from '@karoly-pfaff/audio-analyzer/spectrum';
+import { estimateQuickTempo } from '@karoly-pfaff/audio-analyzer/tempo';
+
+export { analyzeAudio, createAnalysisPcm, analyzeSignal, analyzeSpectrum, estimateQuickTempo };</code></pre>
+  <h3>Installing a published GitHub Packages version</h3>
+  <p>
+    GitHub Packages requires authentication even for public npm packages. Log in with a personal
+    access token (classic) with read:packages, then install the exact released version. Credentials
+    belong in your user-level npm configuration.
+  </p>
+  <pre><code>npm login --scope=@karoly-pfaff --auth-type=legacy --registry=https://npm.pkg.github.com
+npm config set @karoly-pfaff:registry=https://npm.pkg.github.com --location=project
+npm install --save-exact @karoly-pfaff/audio-analyzer@0.1.0</code></pre>
+  <h3>A first measurement</h3>
+  <pre
+    data-ts-example="first-measurement"
+  ><code>import { analyzeSignal } from '@karoly-pfaff/audio-analyzer/signal';
+
+export const summary = analyzeSignal({
+  channels: [new Float32Array([0, 0.5, -0.5, 1.2])],
+  sampleRate: 48_000,
+});
+// summary.channelCount === 1
+// summary.frameCount === 4
+// summary.peakAmplitude is approximately 1.2
+// summary.clippedSampleCount === 1</code></pre>
+  <h3>Settings objects</h3>
+  <p>
+    Omitting a settings argument uses that API's defaults. When supplying settings, pass a complete
+    object: spread the corresponding DEFAULT_* constant and override individual fields. Unknown
+    fields and missing required fields are rejected. A schema's parse or safeParse method validates
+    settings without running audio analysis.
+  </p>
+</section>
+<section id="playground">
+  <p class="eyebrow">EXAMPLES</p>
+  <h2>Interactive examples</h2>
+  <p>
+    The examples generate PCM locally. Signal and spectrum use a 0.2-second sine; music uses a
+    one-second sine; tempo uses 12 seconds of decaying pulses. Frequency changes the sine examples,
+    pulse tempo changes the tempo example, and amplitude changes both. The invalid-PCM example shows
+    the error returned for an empty channel list.
+  </p>
+  <form id="playground-form" class="playground-controls">
+    <label
+      >Profile<select name="profile">
+        <option value="signal">Original signal</option>
+        <option value="spectrum">Spectrum</option>
+        <option value="tempo">Quick BPM</option>
+        <option value="musical">Musical timeline</option>
+        <option value="validation">Invalid PCM boundary</option>
+      </select></label
+    >
+    <label
+      >Frequency (Hz)<input
+        name="frequency"
+        type="number"
+        min="100"
+        max="3000"
+        step="10"
+        value="1000"
+        required
+    /></label>
+    <label
+      >Amplitude<input
+        name="amplitude"
+        type="number"
+        min="0"
+        max="1.2"
+        step="0.1"
+        value="0.8"
+        required
+    /></label>
+    <label
+      >Pulse tempo (BPM)<input
+        name="bpm"
+        type="number"
+        min="60"
+        max="180"
+        step="1"
+        value="120"
+        required
+    /></label>
+    <button class="primary-button" type="submit">Run analysis</button>
+  </form>
+  <figure class="plot">
+    <canvas
+      id="demo-plot"
+      width="960"
+      height="150"
+      aria-label="Analysis curve; numeric summary follows"
+    ></canvas>
+    <figcaption id="plot-caption">
+      Choose a profile and run analysis. No file or microphone access is requested.
+    </figcaption>
+  </figure>
+  <pre
+    class="demo-result"
+  ><output id="demo-output" aria-live="polite">Your result will appear here.</output></pre>
+  <noscript
+    ><p>
+      JavaScript enables the playground, theme switch, copy buttons and API filter. All
+      explanations, code and declarations remain readable without it.
+    </p></noscript
+  >
+</section>
